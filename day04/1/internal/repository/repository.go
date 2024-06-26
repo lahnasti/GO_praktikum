@@ -13,6 +13,7 @@ type Storage struct {
 	log *zerolog.Logger
 }
 
+
 func New(zlog *zerolog.Logger) *Storage {
 	db :=  make(map[string]models.Task)
 	return &Storage{

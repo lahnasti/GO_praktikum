@@ -23,6 +23,7 @@ type Server struct {
 	log *zerolog.Logger
 }
 
+
 func New(db Repository, zlog *zerolog.Logger) *Server {
 	valid := validator.New()
 	return &Server{
@@ -52,6 +53,7 @@ func (s *Server) AddTaskHandler(ctx *gin.Context) {
 		return
 	}
 	s.log.Debug().Any("task", task).Msg("Check task from body")
+
 	err = s.valid.Struct(task)
 	if err != nil {
 		s.log.Error().Err(err).Msg("Failed validation")
@@ -59,6 +61,7 @@ func (s *Server) AddTaskHandler(ctx *gin.Context) {
 		return
 	}
 	taskID, err := s.db.AddTask(task)
+
 	if err != nil {
 		s.log.Error().Err(err).Msg("Failed to save task")
 		ctx.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to save task"})
