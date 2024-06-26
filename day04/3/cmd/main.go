@@ -7,7 +7,10 @@ import (
 
 func main() {
 	r := gin.Default()
+
+	r.POST("/register", server.RegisterHandler)
 	r.POST("/login", server.LoginHandler)
+	
 	protected := r.Group("/", server.AuthMiddleware())
 	protected.GET("/profile", server.ProfileHandler)
 

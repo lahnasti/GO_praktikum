@@ -5,10 +5,15 @@ import (
 	"github.com/lahnasti/GO_praktikum/internal/domain/models"
 )
 
-var users = map[string]string{
-	"admin": "password",
-}
+var users = map[string]string{}
 
+func Register(username, password string) error {
+	if _, exists := users[username]; exists {
+		return errors.New("user already exists")
+	}
+	users[username] = password
+	return nil
+}
 
 func Authenticate(username, password string) error {
 	if pass, ok := users[username]; ok && pass == password {

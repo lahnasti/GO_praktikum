@@ -52,22 +52,38 @@ func AuthMiddleware() gin.HandlerFunc {
 	}
 }
 
+func RegisterHandler(c *gin.Context) {
+	var user models.User
+	if err := c.ShouldBindJSON(&user); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request body", "error": err.Error()})
+		return
+	}
+
+	err := repository.Register(user.Username, user.Password)
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"message": "User already exists", "error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "User registered successfully"})
+}
+
 func LoginHandler(c *gin.Context) {
 	var user models.User
 	if err := c.ShouldBindJSON(&user); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request", "error": err.Error()})
 		return
 	}
 
 	err := repository.Authenticate(user.Username, user.Password)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
+		c.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid credentials", "error": err.Error()})
 		return
 	}
 
 	token, err := GenerateJWT(user.Username)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not generate token"})
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Could not generate token"})
 		return
 	}
 
