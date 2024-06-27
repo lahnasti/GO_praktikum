@@ -7,25 +7,25 @@ import (
 	"errors"
 )
 
-type Storage struct {
+type Repository struct {
 	db map[string]models.User
 }
 
-func New() *Storage {
+func New() *Repository {
 	db := make(map[string]models.User)
-	return &Storage{
+	return &Repository{
 		db: db,
 	}
 }
 
-func (stor *Storage) AdduUser(data models.User)(string, error) {
+func (stor *Repository) AddUser(data models.User)(string, error) {
 	userID := uuid.New().String()
 	data.ID = userID
 	stor.db[userID] = data
 	return userID, nil
 }
 
-func (stor *Storage) GetUsers()([]models.User, error) {
+func (stor *Repository) GetUsers()([]models.User, error) {
 	var users []models.User
 	for _, user := range stor.db {
 		users = append(users, user)
@@ -33,7 +33,7 @@ func (stor *Storage) GetUsers()([]models.User, error) {
 	return users, nil
 }
 
-func (stor *Storage) GetUserByID(id string) (models.User, error) {
+func (stor *Repository) GetUserByID(id string) (models.User, error) {
 	user, exists := stor.db[id]
 	if !exists {
 		return models.User{}, errors.New("user not found")
@@ -41,16 +41,16 @@ func (stor *Storage) GetUserByID(id string) (models.User, error) {
 	return user, nil
 }
 
-func (stor *Storage) UpdateUser (id string, user models.User) error {
+/*func (stor *Repository) UpdateUser (id string, user models.User) error {
 	if _, exists := stor.db[id]; !exists {
 		return errors.New("user not found")
 	}
 	user.ID = id
 	stor.db[id] = user
 	return nil
-}
+}*/
 
-func (stor *Storage) DeleteUser (id string) error {
+func (stor *Repository) DeleteUser (id string) error {
 	if _, exists := stor.db[id]; !exists {
 		return errors.New("user not found")
 	}
