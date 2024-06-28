@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
+	"github.com/go-playground/validator/v10"
 
 	"github.com/lahnasti/GO_praktikum/internal/config"
 	"github.com/lahnasti/GO_praktikum/internal/repository"
@@ -28,8 +29,11 @@ func main() {
 
 	log.Debug().Any("storage", storage).Msg("Check new storage")
 
+	validate := validator.New()  // Инициализация валидатора
+
 	server := server.Server{
 		Db: &storage,
+		Valid: validate,
 	}
 	log.Debug().Any("server", server).Msg("Check new server")
 
@@ -38,7 +42,7 @@ func main() {
 	r.POST("/users", server.RegisterUser)
 	r.GET("/users", server.GetUsersHandler)
 	r.GET("/users/:id", server.GetUserByIDHandler)
-	//r.PUT("/users/:id", server.UpdateUserHandler)
+	r.PUT("/users/:id", server.UpdateUserHandler)
 	r.DELETE("/users/:id", server.DeleteUserHandler)
 
 	if err := r.Run(cfg.Addr); err != nil {

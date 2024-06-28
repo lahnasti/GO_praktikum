@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/lahnasti/GO_praktikum/internal/domain/models"
 )
@@ -15,8 +14,8 @@ type DBstorage struct {
 	conn *pgx.Conn
 }
 
-func NewDB(conn *pgx.Conn)DBstorage {
-	return DBstorage {
+func NewDB(conn *pgx.Conn) DBstorage {
+	return DBstorage{
 		conn: conn,
 	}
 }
@@ -54,21 +53,31 @@ func (db *DBstorage) GetUserByID(id string) (models.User, error) {
 	return user, nil
 }
 
-func (db *DBstorage) AddUser(user models.User)(string, error) {
+func (db *DBstorage) AddUser(user models.User) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	row := db.conn.QueryRow(ctx, "INSERT INTO users (name, email, password) VALUES ($1, $2, $3) RETURNING id", user.Name, user.Email, user.Password)
-	userID := uuid.New().String()
-	user.ID = userID
-	if err := row.Scan(&userID); err != nil {
-		return "", err
-	} 
-	return userID, nil
+	query := "INSERT INTO users (name, email, password) VALUES ($1, $2, $3) RETURNING id"
+	var userID string
+	err := db.conn.QueryRow(ctx, query, user.Name, user.Email, user.Password).Scan(&userID)
+	if err != nil {
+		return "", fmt.Errorf("failed to insert user: %w", err)
 	}
+	// Проверка, что userID не пустой
+	if userID == "" {
+		return "", fmt.Errorf("failed to get userID after insert")
+	}
+	return userID, nil
+}
 
-//func (db *DBstorage) UpdateUser {
-
-//}
+func (db *DBstorage) UpdateUser(id string, user models.User) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := db.conn.Exec(ctx, "UPDATE users SET name=$1, email=$2, password=$3 WHERE id=$4", user.Name, user.Email, user.Password, id)
+	if err != nil {
+		return fmt.Errorf("update user failed: %w", err)
+	}
+	return nil
+}
 
 func (db *DBstorage) DeleteUser(id string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
