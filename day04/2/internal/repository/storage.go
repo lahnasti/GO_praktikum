@@ -23,7 +23,7 @@ func NewDB(conn *pgx.Conn) DBstorage {
 func (db *DBstorage) GetUsers() ([]models.User, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	rows, err := db.conn.Query(ctx, "SELECT name, email, password FROM users")
+	rows, err := db.conn.Query(ctx, "SELECT id, name, email, password FROM users")
 	if err != nil {
 		return nil, err
 	}
@@ -31,7 +31,7 @@ func (db *DBstorage) GetUsers() ([]models.User, error) {
 	var users []models.User
 	for rows.Next() {
 		var user models.User
-		if err := rows.Scan(&user.Name, &user.Email, &user.Password); err != nil {
+		if err := rows.Scan(&user.ID, &user.Name, &user.Email, &user.Password); err != nil {
 			return nil, err
 		}
 		user.Name = strings.TrimSpace(user.Name)

@@ -2,7 +2,6 @@ package server
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
@@ -48,15 +47,16 @@ func (s *Server) RegisterUser(ctx *gin.Context) {
 	userID, err := s.Db.AddUser(user)
 	if err != nil {
 		// Проверка на ошибку доступа к таблице users
-        if strings.Contains(err.Error(), "permission denied for table users") {
-            ctx.JSON(http.StatusForbidden, gin.H{"message": "Permission denied for table users"})
-		} else {
+       // if strings.Contains(err.Error(), "permission denied for table users") {
+        //    ctx.JSON(http.StatusForbidden, gin.H{"message": "Permission denied for table users"})
+		//} else {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to save user"})
 		return
 	}
 	ctx.JSON(200, gin.H{"message": "User successfully registered", "user_id": userID})
+	
 }
-}
+
 
 func (s *Server) GetUserByIDHandler(ctx *gin.Context) {
 	id := ctx.Param("id")
