@@ -3,8 +3,7 @@ package main
 import (
 	"fmt"
 	"context"
-
-
+	"log"
 	
 
 	"github.com/go-playground/validator/v10"
@@ -33,6 +32,10 @@ func main() {
 	}
 
 	storage := repository.NewDB(conn)
+
+	if err := storage.CreateTable(context.Background()); err != nil {
+        log.Fatalf("Failed to create table: %v", err)
+    }
 
 	validate := validator.New()  // Инициализация валидатора
 

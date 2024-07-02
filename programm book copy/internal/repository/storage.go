@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"log"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/lahnasti/GO_praktikum/internal/models"
@@ -18,6 +19,22 @@ func NewDB(conn *pgx.Conn) DBstorage {
 	return DBstorage{
 		conn: conn,
 	}
+}
+
+func (s *DBstorage) CreateTable(ctx context.Context) error {
+	_, err := s.conn.Exec(ctx, `CREATE TABLE IF NOT EXISTS books
+	(
+		id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    	title TEXT NOT NULL,
+    	author TEXT NOT NULL
+	);
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to create table: %v", err)
+	}
+	log.Println("Table 'books' created succesfully")
+	return nil
+
 }
 
 func (db *DBstorage) GetBooks() ([]models.Book, error) {

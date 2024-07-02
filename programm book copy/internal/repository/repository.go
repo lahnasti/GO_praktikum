@@ -20,7 +20,6 @@ func New() *Repository {
 }
 
 
-
 func (stor *Repository) GetBooks() ([]models.Book, error) {
 	var books []models.Book
 	for _, book := range stor.db {

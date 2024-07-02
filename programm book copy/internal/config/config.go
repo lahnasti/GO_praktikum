@@ -12,7 +12,7 @@ type Conifg struct {
 
 const (
 	defaultAddr = ":8080"
-	defaultDbDSN = "postgres://nastya:pgspgs@localhost:5433/books"
+	defaultDbDSN = "postgres://nastya:pgspgs@localhost:5455/books"
 )
 
 // Функция обработки флагов запуска
