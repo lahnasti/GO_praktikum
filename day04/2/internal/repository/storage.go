@@ -15,7 +15,7 @@ type DBstorage struct {
 }
 
 func NewDB(conn *pgx.Conn) DBstorage {
-	return DBstorage{
+	return DBstorage {
 		conn: conn,
 	}
 }

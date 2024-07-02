@@ -18,23 +18,14 @@ type Repository interface {
 }
 
 type Server struct {
-	db Repository
-	valid *validator.Validate
+	Db Repository
+	Valid *validator.Validate
 	log *zerolog.Logger
 }
 
 
-func New(db Repository, zlog *zerolog.Logger) *Server {
-	valid := validator.New()
-	return &Server{
-		db: db,
-		valid: valid,
-		log: zlog,
-	}
-}
-
 func (s *Server) GetTasksHandler(ctx *gin.Context) {
-	tasks, err := s.db.GetAllTasks()
+	tasks, err := s.Db.GetAllTasks()
 	if err != nil {
 		s.log.Error().Err(err).Msg("Failed inquiry")
 		ctx.JSON(http.StatusInternalServerError,  gin.H{"error": err.Error()})
@@ -54,13 +45,13 @@ func (s *Server) AddTaskHandler(ctx *gin.Context) {
 	}
 	s.log.Debug().Any("task", task).Msg("Check task from body")
 
-	err = s.valid.Struct(task)
+	err = s.Valid.Struct(task)
 	if err != nil {
 		s.log.Error().Err(err).Msg("Failed validation")
 		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Data has not been validated", "error": err.Error()})
 		return
 	}
-	taskID, err := s.db.AddTask(task)
+	taskID, err := s.Db.AddTask(task)
 
 	if err != nil {
 		s.log.Error().Err(err).Msg("Failed to save task")
@@ -72,7 +63,7 @@ func (s *Server) AddTaskHandler(ctx *gin.Context) {
 
 func (s *Server) GetTaskByIDHandler (ctx *gin.Context) {
 	id := ctx.Param("id")
-	task, err := s.db.GetTaskByID(id)
+	task, err := s.Db.GetTaskByID(id)
 	if err != nil {
 		s.log.Error().Err(err).Msg("Not found ID")
 		ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
@@ -90,7 +81,7 @@ func (s *Server) UpdateTaskHandler (ctx *gin.Context) {
 	}
 	id := ctx.Param("id")
 	task.ID = id
-	err := s.db.UpdateTask(id, task)
+	err := s.Db.UpdateTask(id, task)
 	if err != nil {
 		s.log.Error().Err(err).Msg("Not found ID")
 		ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
@@ -103,7 +94,7 @@ func (s *Server) UpdateTaskHandler (ctx *gin.Context) {
 
 func (s *Server) DeleteTaskHandler(ctx *gin.Context) {
 	id := ctx.Param("id")
-	err := s.db.DeleteTask(id)
+	err := s.Db.DeleteTask(id)
 	if err != nil {
 		s.log.Error().Err(err).Msg("Not found ID")
 		ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
