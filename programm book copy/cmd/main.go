@@ -3,8 +3,7 @@ package main
 import (
 	"fmt"
 	"context"
-	"log"
-	
+	"log"	
 
 	"github.com/go-playground/validator/v10"
 	"github.com/gin-gonic/gin"
