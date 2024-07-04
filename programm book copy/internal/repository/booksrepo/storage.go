@@ -1,4 +1,4 @@
-package repository
+package booksrepo
 
 import (
 	"context"
@@ -24,9 +24,11 @@ func NewDB(conn *pgx.Conn) DBstorage {
 func (s *DBstorage) CreateTable(ctx context.Context) error {
 	_, err := s.conn.Exec(ctx, `CREATE TABLE IF NOT EXISTS books
 	(
-		id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+		bid UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
     	title TEXT NOT NULL,
-    	author TEXT NOT NULL
+    	author TEXT NOT NULL,
+		user_id UUID NOT NULL,
+		FOREIGN KEY (user_id) REFERENCES users(id)
 	);
 	`)
 	if err != nil {
@@ -40,7 +42,7 @@ func (s *DBstorage) CreateTable(ctx context.Context) error {
 func (db *DBstorage) GetBooks() ([]models.Book, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	rows, err := db.conn.Query(ctx, "SELECT id, title, author FROM books")
+	rows, err := db.conn.Query(ctx, "SELECT bid, title, author, iduser FROM books")
 	if err != nil {
 		return nil, err
 	}
@@ -48,11 +50,12 @@ func (db *DBstorage) GetBooks() ([]models.Book, error) {
 	var books []models.Book
 	for rows.Next() {
 		var book models.Book
-		if err := rows.Scan(&book.ID, &book.Title, &book.Author); err != nil {
+		if err := rows.Scan(&book.BID, &book.Title, &book.Author, &book.IDuser); err != nil {
 			return nil, err
 		}
 		book.Title = strings.TrimSpace(book.Title)
 		book.Author = strings.TrimSpace(book.Author)
+		book.IDuser = strings.TrimSpace(book.IDuser)
 		books = append(books, book)
 	}
 	return books, nil
@@ -61,16 +64,16 @@ func (db *DBstorage) GetBooks() ([]models.Book, error) {
 func (db *DBstorage) CreateBook(book models.Book) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	query := "INSERT INTO books (title, author) VALUES ($1, $2) RETURNING id"
-	var bookID string
-	err := db.conn.QueryRow(ctx, query, book.Title, book.Author).Scan(&bookID)
+	query := "INSERT INTO books (title, author) VALUES ($1, $2) RETURNING bid"
+	var bookBID string
+	err := db.conn.QueryRow(ctx, query, book.Title, book.Author).Scan(&bookBID)
 	if err != nil {
 		return "", fmt.Errorf("failed to insert book: %w", err)
 	}
-	if bookID == "" {
+	if bookBID == "" {
 		return "", fmt.Errorf("failed to get bookID after insert")
 	}
-	return bookID, nil
+	return bookBID, nil
 }
 
 /*func (db *DBstorage) GetBookByID(id string) (models.Book, error) {

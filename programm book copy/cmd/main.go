@@ -11,8 +11,14 @@ import (
 
 	//"github.com/lahnasti/GO_praktikum/internal/logger"
 	"github.com/lahnasti/GO_praktikum/internal/config"
-	"github.com/lahnasti/GO_praktikum/internal/repository"
-	"github.com/lahnasti/GO_praktikum/internal/server"
+	
+	"github.com/lahnasti/GO_praktikum/internal/repository/booksrepo"
+	"github.com/lahnasti/GO_praktikum/internal/repository/usersrepo"
+
+	"github.com/lahnasti/GO_praktikum/internal/server/books"
+	"github.com/lahnasti/GO_praktikum/internal/server/users"
+
+	"github.com/lahnasti/GO_praktikum/cmd/routes"
 )
 
 func main() {
@@ -29,23 +35,34 @@ func main() {
 		panic(err)
 	}
 
-	storage := repository.NewDB(conn)
+	storageBook := booksrepo.NewDB(conn)
 
-	if err := storage.CreateTable(context.Background()); err != nil {
+	if err := storageBook.CreateTable(context.Background()); err != nil {
+		log.Fatalf("Failed to create table: %v", err)
+	}
+
+	storageUser := usersrepo.NewDB(conn)
+
+	if err := storageUser.CreateTable(context.Background()); err != nil {
 		log.Fatalf("Failed to create table: %v", err)
 	}
 
 	validate := validator.New() // Инициализация валидатора
 
-	server := server.Server{
-		Db:    &storage,
+	booksServer := books.Server{
+		Db:    &storageBook,
 		Valid: validate,
 	}
-	r := gin.Default()
-	r.GET("/books", server.GetBooksHandler)
-	r.POST("/books", server.CreateBookHandler)
-	//r.GET("/books/:id", server.GetBookByIDHandler)
 
+	usersServer := users.Server{
+		Db: &storageUser,
+		Valid: validate,
+	}
+
+	r := gin.Default()
+
+	routes.BookRoutes(r, &booksServer)
+	routes.UserRoutes(r, &usersServer)
 	//zlog.Info().Msg("Server was started")
 
 	if err := r.Run(cfg.Addr); err != nil {
