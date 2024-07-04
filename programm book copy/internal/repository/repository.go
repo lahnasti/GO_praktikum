@@ -3,6 +3,7 @@ package repository
 import (
 	"github.com/google/uuid"
 	"github.com/lahnasti/GO_praktikum/internal/models"
+	"errors"
 	//"github.com/rs/zerolog"
 )
 
@@ -35,4 +36,12 @@ func (stor *Repository) CreateBook(data models.Book) (string, error) {
 	stor.db[bookID] = data
 	//stor.log.Debug().Any("db", stor.db).Msg("Check db after add book")
 	return bookID, nil
+}
+
+func (stor *Repository) GetBookByID(id string)(models.Book, error) {
+	book, exists := stor.db[id]
+	if !exists {
+		return models.Book{}, errors.New("book not found")
+	}
+	return book, nil
 }

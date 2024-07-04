@@ -1,12 +1,12 @@
 package main
 
 import (
-	"fmt"
 	"context"
-	"log"	
+	"fmt"
+	"log"
 
-	"github.com/go-playground/validator/v10"
 	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5"
 
 	//"github.com/lahnasti/GO_praktikum/internal/logger"
@@ -20,7 +20,6 @@ func main() {
 	//zlog := logger.SetupLogger(true)
 	//zlog.Debug().Msg("Logger was invited")
 	// Получение строки подключения из переменной окружения
-	
 
 	cfg := config.ReadConfig()
 	fmt.Println(cfg)
@@ -33,18 +32,19 @@ func main() {
 	storage := repository.NewDB(conn)
 
 	if err := storage.CreateTable(context.Background()); err != nil {
-        log.Fatalf("Failed to create table: %v", err)
-    }
+		log.Fatalf("Failed to create table: %v", err)
+	}
 
-	validate := validator.New()  // Инициализация валидатора
+	validate := validator.New() // Инициализация валидатора
 
 	server := server.Server{
-		Db: &storage,
+		Db:    &storage,
 		Valid: validate,
 	}
 	r := gin.Default()
 	r.GET("/books", server.GetBooksHandler)
 	r.POST("/books", server.CreateBookHandler)
+	//r.GET("/books/:id", server.GetBookByIDHandler)
 
 	//zlog.Info().Msg("Server was started")
 
@@ -54,7 +54,6 @@ func main() {
 
 }
 
-
 func initDB(addr string) (*pgx.Conn, error) {
 	conn, err := pgx.Connect(context.Background(), addr)
 	if err != nil {
@@ -63,4 +62,3 @@ func initDB(addr string) (*pgx.Conn, error) {
 	}
 	return conn, nil
 }
-

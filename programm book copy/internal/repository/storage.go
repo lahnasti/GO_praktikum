@@ -3,9 +3,9 @@ package repository
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"time"
-	"log"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/lahnasti/GO_praktikum/internal/models"
@@ -72,3 +72,14 @@ func (db *DBstorage) CreateBook(book models.Book) (string, error) {
 	}
 	return bookID, nil
 }
+
+/*func (db *DBstorage) GetBookByID(id string) (models.Book, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	row := db.conn.QueryRow(ctx, "SELECT title, author FROM books WHERE id=$1", id)
+	var book models.Book
+	if err := row.Scan(&book.Title, &book.Author); err != nil {
+		return models.Book{}, err
+	}
+	return book, nil
+}*/

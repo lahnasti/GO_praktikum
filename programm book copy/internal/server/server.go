@@ -2,6 +2,8 @@ package server
 
 import (
 	"net/http"
+	//"log"
+	//"strconv"
 	//"strings"
 
 	"github.com/gin-gonic/gin"
@@ -13,6 +15,7 @@ import (
 type Repository interface {
 	CreateBook(models.Book) (string, error)
 	GetBooks() ([]models.Book, error)
+	//GetBookByID(string)(models.Book, error)
 }
 
 type Server struct {
@@ -57,3 +60,20 @@ func (s *Server) CreateBookHandler(ctx *gin.Context) {
 	ctx.JSON(200, gin.H{"message": "Book successfully created", "book_id": bookID})
 
 	}
+
+	/*func (s *Server) GetBookByIDHandler(ctx *gin.Context) {
+		param := ctx.Query("id")
+		log.Println("Param from url - " + param)
+		id, err := strconv.Atoi(param)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"message": "Invalid argument", "error": err.Error()})
+			return
+		}
+		log.Printf("ID - %v", id)
+		book, err := s.Db.GetBookByID(id)
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		ctx.JSON(200, gin.H{"message": "Book retrieved", "book": book})
+	}*/
