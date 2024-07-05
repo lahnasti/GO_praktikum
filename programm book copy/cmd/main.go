@@ -9,7 +9,7 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5"
 
-	//"github.com/lahnasti/GO_praktikum/internal/logger"
+	"github.com/lahnasti/GO_praktikum/internal/server/users/jwt"
 	"github.com/lahnasti/GO_praktikum/internal/config"
 	
 	"github.com/lahnasti/GO_praktikum/internal/repository/booksrepo"
@@ -35,31 +35,34 @@ func main() {
 		panic(err)
 	}
 
-	storageBook := booksrepo.NewDB(conn)
-
-	if err := storageBook.CreateTable(context.Background()); err != nil {
-		log.Fatalf("Failed to create table: %v", err)
-	}
-
 	storageUser := usersrepo.NewDB(conn)
 
 	if err := storageUser.CreateTable(context.Background()); err != nil {
 		log.Fatalf("Failed to create table: %v", err)
 	}
 
-	validate := validator.New() // Инициализация валидатора
+	storageBook := booksrepo.NewDB(conn)
 
-	booksServer := books.Server{
-		Db:    &storageBook,
-		Valid: validate,
+	if err := storageBook.CreateTable(context.Background()); err != nil {
+		log.Fatalf("Failed to create table: %v", err)
 	}
+
+	validate := validator.New() // Инициализация валидатора
 
 	usersServer := users.Server{
 		Db: &storageUser,
 		Valid: validate,
 	}
 
+	booksServer := books.Server{
+		Db:    &storageBook,
+		Valid: validate,
+	}
+
+
 	r := gin.Default()
+
+	r.POST("/login", jwt.LoginHandler)
 
 	routes.BookRoutes(r, &booksServer)
 	routes.UserRoutes(r, &usersServer)

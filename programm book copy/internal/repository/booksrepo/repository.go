@@ -38,6 +38,16 @@ func (stor *Repository) CreateBook(data models.Book) (string, error) {
 	return bookID, nil
 }
 
+func (stor *Repository) CreateMultipleBooks(data []models.Book) ([]string, error) {
+	var books []string
+	for _, book := range data {
+		bookID := uuid.New().String()
+		book.BID = bookID
+		stor.db[bookID] = book
+		books = append(books, bookID)
+	}
+	return books, nil
+}
 /*func (stor *Repository) GetBookByID(id string)(models.Book, error) {
 	book, exists := stor.db[id]
 	if !exists {

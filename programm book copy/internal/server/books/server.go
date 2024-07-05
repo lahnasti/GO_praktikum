@@ -15,6 +15,8 @@ import (
 type Repository interface {
 	CreateBook(models.Book) (string, error)
 	GetBooks() ([]models.Book, error)
+	CreateMultipleBooks([]models.Book) ([]string, error)
+	GetBooksByUser(user_id string) ([]models.Book, error)
 	//GetBookByID(string)(models.Book, error)
 }
 
@@ -61,6 +63,40 @@ func (s *Server) CreateBookHandler(ctx *gin.Context) {
 
 	}
 
+	func (s *Server) CreateMultipleBooksHandler(ctx *gin.Context) {
+		var books []models.Book
+
+		err := ctx.ShouldBindBodyWithJSON(&books)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"message": "Invalid params", "error": err.Error()})
+		}
+	
+
+	for _, book := range books {
+		err = s.Valid.Struct(book)
+		if err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"message": "Data has not been validated", "error": err.Error()})
+			return
+		}
+	}
+
+	bookID, err := s.Db.CreateMultipleBooks(books)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to save books", "error": err.Error()})
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"message": "Books successfully registered", "book_id": bookID})
+	}
+
+	func (s *Server) GetBooksByUserHandler(ctx *gin.Context) {
+		user_id := ctx.Param("user_id")
+		book, err := s.Db.GetBooksByUser(user_id)
+		if err != nil {
+			ctx.JSON(http.StatusNotFound, gin.H{"message": "Book not found", "error": err.Error()})
+			return
+		}
+		ctx.JSON(http.StatusOK, gin.H{"message": "Book retrieved", "book": book})
+	}
 	/*func (s *Server) GetBookByIDHandler(ctx *gin.Context) {
 		param := ctx.Query("id")
 		log.Println("Param from url - " + param)

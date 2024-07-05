@@ -2,7 +2,6 @@ package users
 
 import (
 	"net/http"
-
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 	"github.com/lahnasti/GO_praktikum/internal/models"
@@ -21,7 +20,6 @@ type Server struct {
 	Db    Repository
 	Valid *validator.Validate
 }
-
 
 func (s *Server) GetUsersHandler(ctx *gin.Context) {
 	users, err := s.Db.GetUsers()
@@ -115,7 +113,7 @@ func (s *Server) RegisterMultipleUsersHadler(ctx *gin.Context) {
 }
 	userID, err := s.Db.AddMultipleUsers(users)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to save user", "error": err.Error()})
+		ctx.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to save users", "error": err.Error()})
 		return
 	}
 	ctx.JSON(200, gin.H{"message": "Users successfully registered", "users_ID": userID})

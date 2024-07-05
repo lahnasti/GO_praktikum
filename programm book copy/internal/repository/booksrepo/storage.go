@@ -28,7 +28,7 @@ func (s *DBstorage) CreateTable(ctx context.Context) error {
     	title TEXT NOT NULL,
     	author TEXT NOT NULL,
 		user_id UUID NOT NULL,
-		FOREIGN KEY (user_id) REFERENCES users(id)
+        FOREIGN KEY (user_id) REFERENCES users(id)
 	);
 	`)
 	if err != nil {
@@ -42,7 +42,7 @@ func (s *DBstorage) CreateTable(ctx context.Context) error {
 func (db *DBstorage) GetBooks() ([]models.Book, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	rows, err := db.conn.Query(ctx, "SELECT bid, title, author, iduser FROM books")
+	rows, err := db.conn.Query(ctx, "SELECT bid, title, author, user_id FROM books")
 	if err != nil {
 		return nil, err
 	}
@@ -64,9 +64,9 @@ func (db *DBstorage) GetBooks() ([]models.Book, error) {
 func (db *DBstorage) CreateBook(book models.Book) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	query := "INSERT INTO books (title, author) VALUES ($1, $2) RETURNING bid"
+	query := "INSERT INTO books (title, author, user_id) VALUES ($1, $2, $3) RETURNING bid"
 	var bookBID string
-	err := db.conn.QueryRow(ctx, query, book.Title, book.Author).Scan(&bookBID)
+	err := db.conn.QueryRow(ctx, query, book.Title, book.Author, book.IDuser).Scan(&bookBID)
 	if err != nil {
 		return "", fmt.Errorf("failed to insert book: %w", err)
 	}
@@ -74,6 +74,61 @@ func (db *DBstorage) CreateBook(book models.Book) (string, error) {
 		return "", fmt.Errorf("failed to get bookID after insert")
 	}
 	return bookBID, nil
+}
+
+func (db *DBstorage) CreateMultipleBooks(books []models.Book) ([]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	tx, err := db.conn.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	query := "INSERT INTO books (title, author, user_id) VALUES ($1, $2, $3) RETURNING bid"
+
+	allBooks := make([]string, len(books))
+
+	for i, book := range books {
+		var bookBID string
+		err := tx.QueryRow(ctx, query, book.Title, book.Author, book.IDuser).Scan(&bookBID)
+		if err != nil {
+			return nil, err
+		}
+		allBooks[i] = bookBID
+	}
+	err = tx.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return allBooks, nil
+}
+
+func (db *DBstorage) GetBooksByUser(user_id string) ([]models.Book, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	rows, err := db.conn.Query(ctx, "SELECT bid, title, author FROM books WHERE user_id=$1", user_id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var books []models.Book
+	for rows.Next() {
+		var book models.Book
+		if err := rows.Scan(&book.BID, &book.Title, &book.Author); err != nil {
+			return nil, err
+	} 
+		books = append(books, book)
+	
+	} 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	
+		}
+		return books, nil
+
 }
 
 /*func (db *DBstorage) GetBookByID(id string) (models.Book, error) {
