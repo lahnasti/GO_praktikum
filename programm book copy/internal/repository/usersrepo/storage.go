@@ -8,6 +8,7 @@ import (
 	"log"
 
 	"github.com/jackc/pgx/v5"
+	"golang.org/x/crypto/bcrypt"
 	"github.com/lahnasti/GO_praktikum/internal/models"
 )
 
@@ -74,9 +75,16 @@ func (db *DBstorage) GetUserByID(id string) (models.User, error) {
 func (db *DBstorage) AddUser(user models.User) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+
+	// Хеширование пароля
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
+		if err != nil {
+			return "", fmt.Errorf("failed to hash password: %w", err)
+		}
+
 	query := "INSERT INTO users (name, email, password) VALUES ($1, $2, $3) RETURNING id"
 	var userID string
-	err := db.conn.QueryRow(ctx, query, user.Name, user.Email, user.Password).Scan(&userID)
+	err = db.conn.QueryRow(ctx, query, user.Name, user.Email, string(hashedPassword)).Scan(&userID)
 	if err != nil {
 		return "", fmt.Errorf("failed to insert user: %w", err)
 	}
@@ -124,8 +132,13 @@ func (db *DBstorage) AddMultipleUsers(users []models.User) ([]string, error) {
 	//для каждого ползователя вып запрос на вставку с возвратом ид в виде строки
 	// который сохраняется в слайс 
 	for i, user := range users {
+			// Хеширование пароля
+			hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
+			if err != nil {
+				return nil, err
+			}
 		var userID string
-		err := tx.QueryRow(ctx, query, user.Name, user.Email, user.Password).Scan(&userID)
+		err = tx.QueryRow(ctx, query, user.Name, user.Email, string(hashedPassword)).Scan(&userID)
 		if err != nil {
 			return nil, err
 		}
@@ -139,6 +152,21 @@ func (db *DBstorage) AddMultipleUsers(users []models.User) ([]string, error) {
 	return allUsers, nil
 }
 	
+// FindUserByEmail ищет пользователя по email в базе данных и возвращает его, если найден.
+func (db *DBstorage) FindUserByEmail(email string) (models.User, error) {
+    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+    defer cancel()
+
+    var user models.User
+    query := "SELECT id, name, email, password FROM users WHERE email = $1"
+    err := db.conn.QueryRow(ctx, query, email).Scan(&user.ID, &user.Name, &user.Email, &user.Password)
+    if err != nil {
+        return models.User{}, fmt.Errorf("failed to find user by email: %w", err)
+    }
+
+    return user, nil
+}
+
 	
 
 

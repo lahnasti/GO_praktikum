@@ -1,10 +1,11 @@
 package jwt
 
 import (
-	"time"
+	"fmt"
 	"net/http"
 	"strings"
-	"fmt"
+	"time"
+
 
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gin-gonic/gin"
@@ -13,27 +14,42 @@ import (
 
 var jwtSecret = []byte("secure_jwt")
 
-//Функция для генерации JWT токена для пользователя:
-func GenerateJWT (user models.User) (string, error) {
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims {
-		"id": user.ID,
-		"name": user.Name,
+type Claims struct {
+	User models.User `json:"user"`
+	jwt.StandardClaims
+}
+
+// Функция для генерации JWT токена для пользователя:
+func GenerateJWT(user models.User) (string, error) {
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"id":    user.ID,
+		"name":  user.Name,
 		"email": user.Email,
-		"exp": time.Now().Add(time.Hour * 72).Unix(),
+		"exp":   time.Now().Add(time.Hour * 72).Unix(),
 	})
 
 	tokenString, err := token.SignedString(jwtSecret)
-		if err != nil {
-			return "", err
+	if err != nil {
+		return "", err
 	}
 
 	return tokenString, nil
 }
 
-//Создание JWTAuthMiddleware для проверки токена
+func ValidateJWT(tokenString string) (*jwt.Token, error) {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return jwtSecret, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return token, nil
+}
+
+// Создание JWTAuthMiddleware для проверки токена
 func JWTAuthMiddleware() gin.HandlerFunc {
-	return func(ctx *gin.Context){
-	authHeader := ctx.GetHeader("Authorization")
+	return func(ctx *gin.Context) {
+		authHeader := ctx.GetHeader("Authorization")
 		if authHeader == "" {
 			ctx.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header missing"})
 			ctx.Abort()
@@ -56,27 +72,5 @@ func JWTAuthMiddleware() gin.HandlerFunc {
 		}
 
 		ctx.Next()
-	}
-}
-
-//Обработчик для входа пользователя, который проверяет учетные данные и генерирует JWT токен:
-func LoginHandler(ctx *gin.Context) {
-	var user models.User
-	if err := ctx.ShouldBindJSON(&user); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	// Проверка учетных данных пользователя (например, из базы данных)
-	if user.Email == "test@example.com" && user.Password == "password" {
-		tokenString, err := GenerateJWT(user)
-		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
-			return
-		}
-
-		ctx.JSON(http.StatusOK, gin.H{"token": tokenString})
-	} else {
-		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
 	}
 }

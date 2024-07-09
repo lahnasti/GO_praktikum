@@ -1,8 +1,11 @@
 package usersrepo
 
 import (
+	"fmt"
+
 	"github.com/google/uuid"
 	"github.com/lahnasti/GO_praktikum/internal/models"
+	"golang.org/x/crypto/bcrypt"
 
 	"errors"
 )
@@ -19,6 +22,12 @@ func New() *Repository {
 }
 
 func (stor *Repository) AddUser(data models.User) (string, error) {
+	// Хеширование пароля
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(data.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", fmt.Errorf("failed to hash password: %w", err)
+	}
+	data.Password = string(hashedPassword)
 	userID := uuid.New().String()
 	data.ID = userID
 	stor.db[userID] = data
@@ -68,4 +77,14 @@ func (stor *Repository) AddMultipleUsers(users []models.User) ([]string, error) 
 		ids = append(ids, userID)
 	}
 	return ids, nil
+}
+
+func (stor *Repository) FindUserByEmail(email string) (models.User, error) {
+
+	for _, user := range stor.db {
+		if user.Email == email {
+			return user, nil
+		}
+	}
+	return models.User{}, fmt.Errorf("user not found")
 }

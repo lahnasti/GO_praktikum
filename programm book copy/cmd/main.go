@@ -9,7 +9,6 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/lahnasti/GO_praktikum/internal/server/users/jwt"
 	"github.com/lahnasti/GO_praktikum/internal/config"
 	
 	"github.com/lahnasti/GO_praktikum/internal/repository/booksrepo"
@@ -61,8 +60,6 @@ func main() {
 
 
 	r := gin.Default()
-
-	r.POST("/login", jwt.LoginHandler)
 
 	routes.BookRoutes(r, &booksServer)
 	routes.UserRoutes(r, &usersServer)
