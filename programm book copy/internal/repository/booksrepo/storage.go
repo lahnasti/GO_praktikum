@@ -6,9 +6,14 @@ import (
 	"log"
 	"strings"
 	"time"
+	"errors"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/lahnasti/GO_praktikum/internal/models"
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/rs/zerolog"
 )
 
 type DBstorage struct {
@@ -50,12 +55,12 @@ func (db *DBstorage) GetBooks() ([]models.Book, error) {
 	var books []models.Book
 	for rows.Next() {
 		var book models.Book
-		if err := rows.Scan(&book.BID, &book.Title, &book.Author, &book.IDuser); err != nil {
+		if err := rows.Scan(&book.BID, &book.Title, &book.Author, &book.ID); err != nil {
 			return nil, err
 		}
 		book.Title = strings.TrimSpace(book.Title)
 		book.Author = strings.TrimSpace(book.Author)
-		book.IDuser = strings.TrimSpace(book.IDuser)
+		book.ID = strings.TrimSpace(book.ID)
 		books = append(books, book)
 	}
 	return books, nil
@@ -66,7 +71,7 @@ func (db *DBstorage) CreateBook(book models.Book) (string, error) {
 	defer cancel()
 	query := "INSERT INTO books (title, author, user_id) VALUES ($1, $2, $3) RETURNING bid"
 	var bookBID string
-	err := db.conn.QueryRow(ctx, query, book.Title, book.Author, book.IDuser).Scan(&bookBID)
+	err := db.conn.QueryRow(ctx, query, book.Title, book.Author, book.ID).Scan(&bookBID)
 	if err != nil {
 		return "", fmt.Errorf("failed to insert book: %w", err)
 	}
@@ -92,7 +97,7 @@ func (db *DBstorage) CreateMultipleBooks(books []models.Book) ([]string, error) 
 
 	for i, book := range books {
 		var bookBID string
-		err := tx.QueryRow(ctx, query, book.Title, book.Author, book.IDuser).Scan(&bookBID)
+		err := tx.QueryRow(ctx, query, book.Title, book.Author, book.ID).Scan(&bookBID)
 		if err != nil {
 			return nil, err
 		}
@@ -129,6 +134,23 @@ func (db *DBstorage) GetBooksByUser(user_id string) ([]models.Book, error) {
 		}
 		return books, nil
 
+}
+
+func Migrations(dbAddr, migrationsPath string, zlog *zerolog.Logger) error {
+	migratePath := fmt.Sprintf("file://%s", migrationsPath)
+	m, err := migrate.New(migratePath, dbAddr)
+	if err != nil {
+		return err
+	}
+	if err := m.Up(); err != nil {
+		if errors.Is(err, migrate.ErrNoChange) {
+			zlog.Debug().Msg("No migrations apply")
+			return nil
+		}
+		return err
+	}
+	zlog.Debug().Msg("Migrate complete")
+	return nil
 }
 
 /*func (db *DBstorage) GetBookByID(id string) (models.Book, error) {

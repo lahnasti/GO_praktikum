@@ -4,13 +4,15 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/lahnasti/GO_praktikum/internal/config"
-	
+	"github.com/lahnasti/GO_praktikum/internal/logger"
+
 	"github.com/lahnasti/GO_praktikum/internal/repository/booksrepo"
 	"github.com/lahnasti/GO_praktikum/internal/repository/usersrepo"
 
@@ -22,16 +24,27 @@ import (
 
 func main() {
 
-	//zlog := logger.SetupLogger(true)
-	//zlog.Debug().Msg("Logger was invited")
-	// Получение строки подключения из переменной окружения
+	fmt.Println("Server started")
 
 	cfg := config.ReadConfig()
 	fmt.Println(cfg)
 
+	zlog := logger.SetupLogger(cfg.DebugFlag)
+	zlog.Debug().Any("config", cfg).Msg("Check cfg value")
+
+	err := usersrepo.Migrations(cfg.DBAddr, cfg.MPath, zlog)
+	if err != nil {
+		zlog.Fatal().Err(err).Msg("Init migrations failed")
+	}
+
+	err = booksrepo.Migrations(cfg.DBAddr, cfg.MPath, zlog)
+	if err != nil {
+		zlog.Fatal().Err(err).Msg("Init migrations failed")
+	}
+
 	conn, err := initDB(cfg.DBAddr)
 	if err != nil {
-		panic(err)
+		zlog.Fatal().Err(err).Msg("Connection DB failed")
 	}
 
 	storageUser := usersrepo.NewDB(conn)
@@ -72,10 +85,16 @@ func main() {
 }
 
 func initDB(addr string) (*pgx.Conn, error) {
+	for i := 0; i < 7; i++ {
+		time.Sleep(2 * time.Second)
+		conn, err := pgx.Connect(context.Background(), addr)
+		if err == nil {
+			return conn, nil
+		}
+	}
 	conn, err := pgx.Connect(context.Background(), addr)
 	if err != nil {
-		return nil,
-			fmt.Errorf("database initialization error: %w", err)
+		return nil, fmt.Errorf("database initialization error: %w", err)
 	}
 	return conn, nil
 }

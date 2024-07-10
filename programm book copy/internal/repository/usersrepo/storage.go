@@ -3,13 +3,19 @@ package usersrepo
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"time"
-	"log"
+	"errors"
 
 	"github.com/jackc/pgx/v5"
-	"golang.org/x/crypto/bcrypt"
 	"github.com/lahnasti/GO_praktikum/internal/models"
+	"golang.org/x/crypto/bcrypt"
+	"github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/postgres"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/rs/zerolog"
+
 )
 
 type DBstorage struct {
@@ -17,7 +23,7 @@ type DBstorage struct {
 }
 
 func NewDB(conn *pgx.Conn) DBstorage {
-	return DBstorage {
+	return DBstorage{
 		conn: conn,
 	}
 }
@@ -76,15 +82,9 @@ func (db *DBstorage) AddUser(user models.User) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Хеширование пароля
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
-		if err != nil {
-			return "", fmt.Errorf("failed to hash password: %w", err)
-		}
-
 	query := "INSERT INTO users (name, email, password) VALUES ($1, $2, $3) RETURNING id"
 	var userID string
-	err = db.conn.QueryRow(ctx, query, user.Name, user.Email, string(hashedPassword)).Scan(&userID)
+	err := db.conn.QueryRow(ctx, query, user.Name, user.Email, user.Password).Scan(&userID)
 	if err != nil {
 		return "", fmt.Errorf("failed to insert user: %w", err)
 	}
@@ -118,25 +118,25 @@ func (db *DBstorage) DeleteUser(id string) error {
 func (db *DBstorage) AddMultipleUsers(users []models.User) ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	//открытие транзакции 
+	//открытие транзакции
 	tx, err := db.conn.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
 
-    query := "INSERT INTO users (name, email, password) VALUES ($1, $2, $3) RETURNING id"
+	query := "INSERT INTO users (name, email, password) VALUES ($1, $2, $3) RETURNING id"
 	//принимает слайс пользователей
 	allUsers := make([]string, len(users))
-	
+
 	//для каждого ползователя вып запрос на вставку с возвратом ид в виде строки
-	// который сохраняется в слайс 
+	// который сохраняется в слайс
 	for i, user := range users {
-			// Хеширование пароля
-			hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
-			if err != nil {
-				return nil, err
-			}
+		// Хеширование пароля
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
+		if err != nil {
+			return nil, err
+		}
 		var userID string
 		err = tx.QueryRow(ctx, query, user.Name, user.Email, string(hashedPassword)).Scan(&userID)
 		if err != nil {
@@ -151,24 +151,35 @@ func (db *DBstorage) AddMultipleUsers(users []models.User) ([]string, error) {
 	} // возвращение ид всех доб пользователей в виде строк
 	return allUsers, nil
 }
-	
+
 // FindUserByEmail ищет пользователя по email в базе данных и возвращает его, если найден.
 func (db *DBstorage) FindUserByEmail(email string) (models.User, error) {
-    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-    var user models.User
-    query := "SELECT id, name, email, password FROM users WHERE email = $1"
-    err := db.conn.QueryRow(ctx, query, email).Scan(&user.ID, &user.Name, &user.Email, &user.Password)
-    if err != nil {
-        return models.User{}, fmt.Errorf("failed to find user by email: %w", err)
-    }
+	var user models.User
+	query := "SELECT id, name, email, password FROM users WHERE email = $1"
+	err := db.conn.QueryRow(ctx, query, email).Scan(&user.ID, &user.Name, &user.Email, &user.Password)
+	if err != nil {
+		return models.User{}, fmt.Errorf("failed to find user by email: %w", err)
+	}
 
-    return user, nil
+	return user, nil
 }
 
-	
-
-
-
-
+func Migrations(dbAddr, migrationsPath string, zlog *zerolog.Logger) error {
+	migratePath := fmt.Sprintf("file://%s", migrationsPath)
+	m, err := migrate.New(migratePath, dbAddr)
+	if err != nil {
+		return err
+	}
+	if err := m.Up(); err != nil {
+		if errors.Is(err, migrate.ErrNoChange) {
+			zlog.Debug().Msg("No migrations apply")
+			return nil
+		}
+		return err
+	}
+	zlog.Debug().Msg("Migrate complete")
+	return nil
+}
