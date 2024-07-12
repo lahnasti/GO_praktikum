@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math/rand"
 	"sync"
 	"time"
 )
@@ -16,7 +17,8 @@ func main() {
 	go func() {
 		defer wg.Done()
 		for i := 1; i < 11; i++ {
-			channel <- i
+			n := rand.Intn(10)
+			channel <- n
 			time.Sleep(time.Second)
 		}
 		close(channel)
