@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -12,14 +11,11 @@ import (
 
 	"github.com/lahnasti/GO_praktikum/internal/config"
 	"github.com/lahnasti/GO_praktikum/internal/logger"
+	"github.com/lahnasti/GO_praktikum/internal/repository"
 
-	"github.com/lahnasti/GO_praktikum/internal/repository/booksrepo"
-	"github.com/lahnasti/GO_praktikum/internal/repository/usersrepo"
+	"github.com/lahnasti/GO_praktikum/internal/server"
 
-	"github.com/lahnasti/GO_praktikum/internal/server/books"
-	"github.com/lahnasti/GO_praktikum/internal/server/users"
-
-	"github.com/lahnasti/GO_praktikum/cmd/routes"
+	"github.com/lahnasti/GO_praktikum/internal/server/routes"
 )
 
 func main() {
@@ -32,12 +28,8 @@ func main() {
 	zlog := logger.SetupLogger(cfg.DebugFlag)
 	zlog.Debug().Any("config", cfg).Msg("Check cfg value")
 
-	err := usersrepo.Migrations(cfg.DBAddr, cfg.MPath, zlog)
-	if err != nil {
-		zlog.Fatal().Err(err).Msg("Init migrations failed")
-	}
 
-	err = booksrepo.Migrations(cfg.DBAddr, cfg.MPath, zlog)
+	err := repository.Migrations(cfg.DBAddr, cfg.MPath, zlog)
 	if err != nil {
 		zlog.Fatal().Err(err).Msg("Init migrations failed")
 	}
@@ -47,35 +39,25 @@ func main() {
 		zlog.Fatal().Err(err).Msg("Connection DB failed")
 	}
 
-	storageUser := usersrepo.NewDB(conn)
+	storage, err := repository.NewDB(conn)
 
-	if err := storageUser.CreateTable(context.Background()); err != nil {
-		log.Fatalf("Failed to create table: %v", err)
+	if err != nil {
+		panic(err)
 	}
 
-	storageBook := booksrepo.NewDB(conn)
-
-	if err := storageBook.CreateTable(context.Background()); err != nil {
-		log.Fatalf("Failed to create table: %v", err)
-	}
 
 	validate := validator.New() // Инициализация валидатора
 
-	usersServer := users.Server{
-		Db: &storageUser,
-		Valid: validate,
-	}
-
-	booksServer := books.Server{
-		Db:    &storageBook,
+	server := server.Server{
+		BooksDB: &storage,
+		UsersDB: &storage,
 		Valid: validate,
 	}
 
 
 	r := gin.Default()
-
-	routes.BookRoutes(r, &booksServer)
-	routes.UserRoutes(r, &usersServer)
+	routes.BookRoutes(r, &server)
+	routes.UserRoutes(r, &server)
 	//zlog.Info().Msg("Server was started")
 
 	if err := r.Run(cfg.Addr); err != nil {

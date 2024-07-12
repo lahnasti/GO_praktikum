@@ -11,8 +11,5 @@ CREATE TABLE IF NOT EXISTS books
 		bid serial PRIMARY KEY,
     	title TEXT NOT NULL,
     	author TEXT NOT NULL,
-		id integer NOT NULL
+		id UUID NOT NULL
 	);
-
-
-//FOREIGN KEY (user_id) REFERENCES users(id)

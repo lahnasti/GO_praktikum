@@ -1,48 +1,29 @@
-package usersrepo
+package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"time"
-	"errors"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/lahnasti/GO_praktikum/internal/models"
-	"golang.org/x/crypto/bcrypt"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/jackc/pgx/v5"
+	"github.com/lahnasti/GO_praktikum/internal/models"
 	"github.com/rs/zerolog"
-
+	"golang.org/x/crypto/bcrypt"
 )
 
 type DBstorage struct {
 	conn *pgx.Conn
 }
 
-func NewDB(conn *pgx.Conn) DBstorage {
+func NewDB(conn *pgx.Conn) (DBstorage, error) {
 	return DBstorage{
 		conn: conn,
-	}
-}
-
-func (s *DBstorage) CreateTable(ctx context.Context) error {
-	_, err := s.conn.Exec(ctx, `CREATE TABLE IF NOT EXISTS users
-	(
-		id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-    	name TEXT NOT NULL,
-    	email TEXT UNIQUE NOT NULL,
-		password TEXT NOT NULL
-	);
-	`)
-	if err != nil {
-		return fmt.Errorf("failed to create table: %v", err)
-	}
-	log.Println("Table 'users' created succesfully")
-	return nil
-
+	}, nil
 }
 
 func (db *DBstorage) GetUsers() ([]models.User, error) {
@@ -182,4 +163,96 @@ func Migrations(dbAddr, migrationsPath string, zlog *zerolog.Logger) error {
 	}
 	zlog.Debug().Msg("Migrate complete")
 	return nil
+}
+
+func (db *DBstorage) GetBooks() ([]models.Book, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	rows, err := db.conn.Query(ctx, "SELECT bid, title, author, id FROM books")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var books []models.Book
+	for rows.Next() {
+		var book models.Book
+		if err := rows.Scan(&book.BID, &book.Title, &book.Author, &book.ID); err != nil {
+			return nil, err
+		}
+		book.Title = strings.TrimSpace(book.Title)
+		book.Author = strings.TrimSpace(book.Author)
+		book.ID = strings.TrimSpace(book.ID)
+		books = append(books, book)
+	}
+	return books, nil
+}
+
+func (db *DBstorage) CreateBook(book models.Book) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	query := "INSERT INTO books (title, author, id) VALUES ($1, $2, $3) RETURNING bid"
+	var bookBID string
+	err := db.conn.QueryRow(ctx, query, book.Title, book.Author, book.ID).Scan(&bookBID)
+	if err != nil {
+		return "", fmt.Errorf("failed to insert book: %w", err)
+	}
+	if bookBID == "" {
+		return "", fmt.Errorf("failed to get bookID after insert")
+	}
+	return bookBID, nil
+}
+
+func (db *DBstorage) CreateMultipleBooks(books []models.Book) ([]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	tx, err := db.conn.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	query := "INSERT INTO books (title, author, id) VALUES ($1, $2, $3) RETURNING bid"
+
+	allBooks := make([]string, len(books))
+
+	for i, book := range books {
+		var bookBID string
+		err := tx.QueryRow(ctx, query, book.Title, book.Author, book.ID).Scan(&bookBID)
+		if err != nil {
+			return nil, err
+		}
+		allBooks[i] = bookBID
+	}
+	err = tx.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return allBooks, nil
+}
+
+func (db *DBstorage) GetBooksByUser(id string) ([]models.Book, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	rows, err := db.conn.Query(ctx, "SELECT bid, title, author FROM books WHERE id=$1", id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var books []models.Book
+	for rows.Next() {
+		var book models.Book
+		if err := rows.Scan(&book.BID, &book.Title, &book.Author); err != nil {
+			return nil, err
+		}
+		books = append(books, book)
+
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+
+	}
+	return books, nil
+
 }

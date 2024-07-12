@@ -4,7 +4,7 @@ type Book struct {
 	BID    string `json:"bid"`
 	Title  string `json:"title" validate:"required"`
 	Author string `json:"author" validate:"required"`
-	ID string `json:"iduser"`
+	ID string `json:"id"`
 }
 
 type User struct {
