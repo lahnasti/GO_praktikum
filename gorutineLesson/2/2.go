@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math/rand"
 	"sync"
-	"time"
 )
 
 func main() {
@@ -19,7 +18,6 @@ func main() {
 		for i := 1; i < 11; i++ {
 			n := rand.Intn(10)
 			channel <- n
-			time.Sleep(time.Second)
 		}
 		close(channel)
 	}()

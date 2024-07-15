@@ -4,6 +4,12 @@ import (
 	"context"
 	"fmt"
 	"time"
+	"os"
+	"os/signal"
+	"syscall"
+	"log"
+	"net/http"
+
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
@@ -19,8 +25,6 @@ import (
 )
 
 func main() {
-
-	fmt.Println("Server started")
 
 	cfg := config.ReadConfig()
 	fmt.Println(cfg)
@@ -53,18 +57,49 @@ func main() {
 		UsersDB: &storage,
 		Valid: validate,
 	}
+	// Канал для получения системных сигналов
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 
 
 	r := gin.Default()
 	routes.BookRoutes(r, &server)
 	routes.UserRoutes(r, &server)
-	//zlog.Info().Msg("Server was started")
+	zlog.Info().Msg("Server was started")
+
+	httpServer := &http.Server{
+		Addr:    cfg.Addr,
+		Handler: r,
+	}
 
 	if err := r.Run(cfg.Addr); err != nil {
 		panic(err)
 	}
 
+	// Запуск сервера в отдельной горутине
+	go func() {
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Could not listen on %s: %v\n", cfg.Addr, err)
+		}
+	}()
+
+	log.Printf("Server is ready to handle requests at %s", cfg.Addr)
+
+	// Блокируемся, ожидая сигнала завершения
+	<-stop
+	log.Println("Server is shutting down...")
+
+	// Создаем контекст с таймаутом для graceful shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Завершаем сервер
+	if err := httpServer.Shutdown(ctx); err != nil {
+		log.Fatalf("Server Shutdown Failed:%+v", err)
+	}
+	log.Println("Server exited properly")
 }
+
 
 func initDB(addr string) (*pgx.Conn, error) {
 	for i := 0; i < 7; i++ {
