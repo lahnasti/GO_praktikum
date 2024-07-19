@@ -97,6 +97,7 @@ func main() {
 	if err := httpServer.Shutdown(ctx); err != nil {
 		log.Fatalf("Server Shutdown Failed:%+v", err)
 	}
+	
 	log.Println("Server exited properly")
 }
 
