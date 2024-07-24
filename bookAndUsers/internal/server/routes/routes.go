@@ -27,5 +27,6 @@ func BookRoutes(r *gin.Engine, server *server.Server) {
 		bookGroup.POST("/adds", server.JWTAuthMiddleware(), server.CreateMultipleBooksHandler)
 
 		bookGroup.GET("/:user_id", server.JWTAuthMiddleware(), server.GetBooksByUserHandler)
+		bookGroup.DELETE("/delete/:id", server.JWTAuthMiddleware(), server.DeleteBookHandler)
 	}
 }

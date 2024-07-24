@@ -256,3 +256,35 @@ func (db *DBstorage) GetBooksByUser(id string) ([]models.Book, error) {
 	return books, nil
 
 }
+
+func (db *DBstorage) SetDeleteStatus(bid int) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if _, err := db.conn.Exec(ctx, "UPDATE books SET delete = true WHERE bid = $1"); err != nil {
+		return fmt.Errorf("update delete status failed: %w", err)
+	}
+	return nil
+}
+
+func (db *DBstorage) DeleteBooks(bIds []int) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	tx, err := db.conn.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("create transaction failed: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Prepare(ctx, "delete book", "DELETE FROM books WHERE bid = $1"); err != nil {
+		return fmt.Errorf("create prepare sql str failed: %w", err)
+	}
+
+	for _, bid := range bIds {
+		if _, err := tx.Exec(ctx, "delete book", bid); err != nil {
+			return fmt.Errorf("failed delete book: %w", err)
+		}
+	}
+	return tx.Commit(ctx)
+}

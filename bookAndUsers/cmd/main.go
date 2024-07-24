@@ -52,6 +52,8 @@ func main() {
 
 	validate := validator.New() // Инициализация валидатора
 
+	srv := server.NewServer(&storage)
+	
 	server := server.Server{
 		BooksDB: &storage,
 		UsersDB: &storage,
@@ -72,9 +74,6 @@ func main() {
 		Handler: r,
 	}
 
-	if err := r.Run(cfg.Addr); err != nil {
-		panic(err)
-	}
 
 	// Запуск сервера в отдельной горутине
 	go func() {

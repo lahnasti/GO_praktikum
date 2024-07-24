@@ -15,7 +15,7 @@ type Repository struct {
 	usersDB map[string]models.User
 }
 
-func New() *Repository {
+func NewRepository() *Repository {
 	booksDB := make(map[string]models.Book)
 	usersDB := make(map[string]models.User)
 	return &Repository{

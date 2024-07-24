@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,6 +13,13 @@ import (
 	"github.com/lahnasti/GO_praktikum/internal/models"
 	"golang.org/x/crypto/bcrypt"
 )
+
+var jwtSecret = []byte("secure_jwt")
+
+type Claims struct {
+	User models.User `json:"user"`
+	jwt.StandardClaims
+}
 
 type Repository interface {
 	AddUser(models.User) (string, error)
@@ -26,12 +34,25 @@ type Repository interface {
 	GetBooks() ([]models.Book, error)
 	CreateMultipleBooks([]models.Book) ([]string, error)
 	GetBooksByUser(id string) ([]models.Book, error)
+	DeleteBooks([]int) error
+	SetDeleteStatus(int) error
 }
 
 type Server struct {
-	BooksDB Repository
-	UsersDB Repository
-	Valid   *validator.Validate
+	BooksDB    Repository
+	UsersDB    Repository
+	Valid      *validator.Validate
+	deleteChan chan int
+}
+
+func NewServer(repo Repository) *Server {
+	dchan := make(chan int, 5)
+	return &Server{
+		BooksDB: repo,
+		UsersDB: repo,
+		Valid: 
+		deleteChan: dchan,
+	}
 }
 
 func (s *Server) GetUsersHandler(ctx *gin.Context) {
@@ -315,11 +336,29 @@ func (s *Server) GetBooksByUserHandler(ctx *gin.Context) {
 	ctx.JSON(200, gin.H{"message": "Book retrieved", "book": book})
 }*/
 
-var jwtSecret = []byte("secure_jwt")
+func (s *Server) DeleteBookHandler(ctx *gin.Context) {
+	token := ctx.GetHeader("Authorization")
+	_, err := ValidateJWT(token)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Bad auth token", "error": err.Error()})
+		return
+	}
 
-type Claims struct {
-	User models.User `json:"user"`
-	jwt.StandardClaims
+	bidStr := ctx.Param("id")
+
+	bid, err := strconv.Atoi(bidStr)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Bad book_id", "error": err.Error()})
+		return
+	}
+
+	err = s.BooksDB.SetDeleteStatus(bid)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "Book deleted", "book_id": bid})
 }
 
 // Функция для генерации JWT токена для пользователя:

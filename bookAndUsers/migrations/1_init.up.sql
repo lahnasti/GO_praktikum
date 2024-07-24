@@ -11,5 +11,6 @@ CREATE TABLE IF NOT EXISTS books
 		bid serial PRIMARY KEY,
     	title TEXT NOT NULL,
     	author TEXT NOT NULL,
+		delete BOOLEAN NOT NULL DEFAULT false,
 		id UUID NOT NULL
 	);
