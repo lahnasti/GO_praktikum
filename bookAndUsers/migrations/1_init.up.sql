@@ -1,10 +1,12 @@
 CREATE TABLE IF NOT EXISTS users
 	(
-		id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    	uid serial PRIMARY KEY,
     	name TEXT NOT NULL,
-    	email TEXT NOT NULL,
+    	login TEXT NOT NULL,
 		password TEXT NOT NULL
 	);
+
+CREATE UNIQUE INDEX IF NOT EXISTS login_id ON users (login);
 
 CREATE TABLE IF NOT EXISTS books
 	(
@@ -12,5 +14,5 @@ CREATE TABLE IF NOT EXISTS books
     	title TEXT NOT NULL,
     	author TEXT NOT NULL,
 		delete BOOLEAN NOT NULL DEFAULT false,
-		id UUID NOT NULL
+		uid integer NOT NULL
 	);

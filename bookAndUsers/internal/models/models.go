@@ -1,16 +1,15 @@
 package models
 
 type Book struct {
-	BID    string `json:"bid"`
+	BID    int `json:"bId"`
 	Title  string `json:"title" validate:"required"`
 	Author string `json:"author" validate:"required"`
-	ID string `json:"id"`
+	UID int `json:"uId"`
 }
 
 type User struct {
-	ID       string `json:"id"`
+	UID       int `json:"uId"`
 	Name     string `json:"name" validate:"required"`
-	Email    string `json:"email" validate:"required,email"`
+	Login    string `json:"login" validate:"required"`
 	Password string `json:"password" validate:"required"`
-	//Token    string `json:"token"`
 }

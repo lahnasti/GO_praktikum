@@ -1,67 +1,96 @@
 package server
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/dgrijalva/jwt-go"
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
+	"github.com/golang-jwt/jwt/v4"
+	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/lahnasti/GO_praktikum/internal/models"
+	"github.com/rs/zerolog"
 	"golang.org/x/crypto/bcrypt"
 )
 
-var jwtSecret = []byte("secure_jwt")
+const jwtSecret = "secure_jwt"
 
 type Claims struct {
-	User models.User `json:"user"`
-	jwt.StandardClaims
+	UserID string
+	jwt.RegisteredClaims
 }
 
 type Repository interface {
-	AddUser(models.User) (string, error)
-	GetUserByID(id string) (models.User, error)
-	GetUsers() ([]models.User, error)
-	UpdateUser(id string, user models.User) error
-	DeleteUser(id string) error
-	AddMultipleUsers([]models.User) ([]string, error)
-	FindUserByEmail(email string) (models.User, error)
-
-	CreateBook(models.Book) (string, error)
-	GetBooks() ([]models.Book, error)
-	CreateMultipleBooks([]models.Book) ([]string, error)
-	GetBooksByUser(id string) ([]models.Book, error)
-	DeleteBooks([]int) error
+	GetAllUsers() ([]models.User, error)
+	GetUser(int) (models.User, error)
+	GetUserByLogin(string) (models.User, error)
+	GetAllBooks() ([]models.Book, error)
+	GetBooksByUser(int) ([]models.Book, error)
+	AddUser(models.User) (int, error)
+	SaveBook(models.Book) error
+	SaveBooks([]models.Book, int) error
+	UpdateUser(int, models.User) error
+	DeleteUser() error
+	DeleteBooks() error
 	SetDeleteStatus(int) error
 }
 
 type Server struct {
-	BooksDB    Repository
-	UsersDB    Repository
-	Valid      *validator.Validate
+	Db         Repository
+	ErrorChan  chan error
 	deleteChan chan int
+	Valid      *validator.Validate
+	log        *zerolog.Logger
 }
 
-func NewServer(repo Repository) *Server {
-	dchan := make(chan int, 5)
+func NewServer(ctx context.Context, db Repository, zlog *zerolog.Logger) *Server {
+	dChan := make(chan int, 5)
+	errChan := make(chan error)
+	srv := Server{
+		Db:         db,
+		deleteChan: dChan,
+		ErrorChan:  errChan,
+		log:        zlog,
+	}
+	go srv.deleter(ctx)
 	return &Server{
-		BooksDB: repo,
-		UsersDB: repo,
-		Valid: 
-		deleteChan: dchan,
+		Db:         db,
+		deleteChan: dChan,
+		ErrorChan:  errChan,
 	}
 }
 
-func (s *Server) GetUsersHandler(ctx *gin.Context) {
-	users, err := s.UsersDB.GetUsers()
+func (s *Server) GetAllUsersHandler(ctx *gin.Context) {
+	users, err := s.Db.GetAllUsers()
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"message": "List users", "users": users})
+}
+
+func (s *Server) GetUserHandler(c *gin.Context) {
+	param := c.Query("uid")
+	log.Println("Param from url - " + param)
+	uid, err := strconv.Atoi(param)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid argument"})
+		return
+	}
+	log.Printf("UID - %v", uid)
+	user, err := s.Db.GetUser(uid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(200, user)
 }
 
 func (s *Server) RegisterUserHandler(ctx *gin.Context) {
@@ -72,38 +101,83 @@ func (s *Server) RegisterUserHandler(ctx *gin.Context) {
 		return
 	}
 
-	err = s.Valid.Struct(user)
+	/*err = s.Valid.Struct(user)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Data has not been validated", "error": err.Error()})
 		return
-	}
+	}*/
 
 	// Хеширование пароля
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to hash password", "error": err.Error()})
 		return
 	}
-
-	user.Password = string(hashedPassword)
-
-	userID, err := s.UsersDB.AddUser(user)
+	user.Password = string(hash)
+	uid, err := s.Db.AddUser(user)
 	if err != nil {
-		// Проверка на ошибку доступа к таблице users
-		// if strings.Contains(err.Error(), "permission denied for table users") {
-		//    ctx.JSON(http.StatusForbidden, gin.H{"message": "Permission denied for table users"})
-		//} else {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to save user"})
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) { // Приводим ошибку err к типу PgError
+			if !pgerrcode.IsIntegrityConstraintViolation(pgErr.Code) { // Проверяем, входит ли ошибка в 23й класс ошибок Sql
+				ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()}) // Если нет, то просто выводим ошибку
+				return
+			}
+			ctx.JSON(http.StatusConflict, gin.H{"error": "login already userd"})
+			return
+		}
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	uidStr := strconv.Itoa(uid)
+	token, err := GenerateJWT(uidStr)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	ctx.Header("Authorization", token)
+	ctx.JSON(200, gin.H{"message": "User successfully registered", "user_id": uid})
+
+}
+
+// Обработчик для входа пользователя, который проверяет учетные данные и генерирует JWT токен:
+func (s *Server) LoginHandler(ctx *gin.Context) {
+	var user models.User
+	if err := ctx.ShouldBindJSON(&user); err != nil {
+		s.log.Error().Err(err).Msg("failed parse login data from body")
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	ctx.JSON(200, gin.H{"message": "User successfully registered", "user_id": userID})
+	// Проверка учетных данных пользователя
+	userFromDb, err := s.Db.GetUserByLogin(user.Login)
+	if err != nil {
+		s.log.Error().Err(err).Msg("failed get user by login")
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials: user not found"})
+		return
+	}
 
+	// Проверка пароля
+	err = bcrypt.CompareHashAndPassword([]byte(userFromDb.Password), []byte(user.Password))
+	if err != nil {
+		s.log.Error().Err(err).Msg("failed get user by login")
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials: incorrect password"})
+		return
+	}
+
+	// Если учетные данные верны, генерируем JWT токен
+	uidStr := strconv.Itoa(userFromDb.UID)
+	token, err := GenerateJWT(uidStr)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		return
+	}
+	ctx.Header("Authorization", token)
+	ctx.String(http.StatusOK, "User %s was logined", user.Name)
 }
 
 func (s *Server) GetUserByIDHandler(ctx *gin.Context) {
 	id := ctx.Param("id")
-	user, err := s.UsersDB.GetUserByID(id)
+	user, err := s.Db.GetUserByLogin(id)
 	if err != nil {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -118,9 +192,13 @@ func (s *Server) UpdateUserHandler(ctx *gin.Context) {
 		return
 	}
 
-	id := ctx.Param("id")
-	user.ID = id
-	err := s.UsersDB.UpdateUser(id, user)
+	uid := ctx.Param("id")
+	uIdInt, err := strconv.Atoi(uid)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	err = s.Db.UpdateUser(uIdInt, user)
 	if err != nil {
 		ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -130,92 +208,31 @@ func (s *Server) UpdateUserHandler(ctx *gin.Context) {
 }
 
 func (s *Server) DeleteUserHandler(ctx *gin.Context) {
-	id := ctx.Param("id")
-	err := s.UsersDB.DeleteUser(id)
+	token := ctx.GetHeader("Authorization")
+	_, err := ValidateJWT(token)
 	if err != nil {
-		ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Bad auth token", "error": err.Error()})
 		return
 	}
-	ctx.JSON(200, gin.H{"message": "User deleted", "user_id": id})
+
+	uId := ctx.Param("id")
+	uIdInt, err := strconv.Atoi(uId)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Bad user_id", "error": err.Error()})
+		return
+	}
+
+	err = s.Db.SetDeleteStatus(uIdInt)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	s.deleteChan <- uIdInt
+	ctx.JSON(http.StatusOK, gin.H{"message": "User deleted", "user_id": uIdInt})
 }
 
-func (s *Server) RegisterMultipleUsersHadler(ctx *gin.Context) {
-	var users []models.User
-
-	err := ctx.ShouldBindBodyWithJSON(&users)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Invalid params", "error": err.Error()})
-		return
-	}
-
-	for i := range users {
-		user := &users[i] // Получаем указатель на каждого пользователя
-
-		err = s.Valid.Struct(user)
-		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"message": "Data has not been validated", "error": err.Error()})
-			return
-		}
-		// Хеширование пароля
-		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
-		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to hash password", "error": err.Error()})
-			return
-		}
-
-		user.Password = string(hashedPassword)
-
-	}
-
-	userID, err := s.UsersDB.AddMultipleUsers(users)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to save users", "error": err.Error()})
-		return
-	}
-
-	ctx.JSON(200, gin.H{"message": "Users successfully registered", "users_ID": userID})
-}
-
-// Обработчик для входа пользователя, который проверяет учетные данные и генерирует JWT токен:
-func (s *Server) LoginHandler(ctx *gin.Context) {
-	var user models.User
-	if err := ctx.ShouldBindJSON(&user); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	// Проверка учетных данных пользователя
-	dbUser, err := s.UsersDB.FindUserByEmail(user.Email)
-	if err != nil {
-		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials: user not found"})
-		return
-	}
-
-	fmt.Printf("User from DB: %+v\n", dbUser)
-
-	// Проверка пароля
-	err = bcrypt.CompareHashAndPassword([]byte(dbUser.Password), []byte(user.Password))
-	if err != nil {
-		// Логирование пароля и хеша для отладки
-		fmt.Printf("Provided password: %s\n", user.Password)
-		fmt.Printf("Stored hash: %s\n", dbUser.Password)
-		fmt.Printf("Error: %v\n", err)
-		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials: incorrect password"})
-		return
-	}
-
-	// Если учетные данные верны, генерируем JWT токен
-	tokenString, err := GenerateJWT(dbUser)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
-		return
-	}
-
-	ctx.JSON(http.StatusOK, gin.H{"token": tokenString})
-}
-
-func (s *Server) GetBooksHandler(ctx *gin.Context) {
-	books, err := s.BooksDB.GetBooks()
+func (s *Server) GetAllBooksHandler(ctx *gin.Context) {
+	books, err := s.Db.GetAllBooks()
 	if err != nil {
 		//s.log.Error().Err(err).Msg("Failed inquiry")
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -224,78 +241,69 @@ func (s *Server) GetBooksHandler(ctx *gin.Context) {
 	ctx.JSON(200, gin.H{"message": "Storage books", "books": books})
 }
 
-func (s *Server) CreateBookHandler(ctx *gin.Context) {
+func (s *Server) SaveBookHandler(ctx *gin.Context) {
 	token := ctx.GetHeader("Authorization")
 	if token == "" {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"message": "Authorization header missing"})
 		return
 	}
-	token = strings.TrimPrefix(token, "Bearer ")
-	id, err := ValidateJWT(token)
+	uid, err := ValidateJWT(token)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"message": "bad auth token", "error": err.Error()})
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Bad auth token", "error": err.Error()})
 		return
 	}
 
 	var book models.Book
-	err = ctx.ShouldBindBodyWithJSON(&book)
-	if err != nil {
-		//s.log.Error().Err(err).Msg("Failed unmarshal body")
-		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Invalid params", "error": err.Error()})
+	if err := ctx.ShouldBindBodyWithJSON(&book); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	err = s.Valid.Struct(book)
+	uidInt, err := strconv.Atoi(uid)
 	if err != nil {
-		//s.log.Error().Err(err).Msg("Failed validation")
-		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Data has not been validated", "error": err.Error()})
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	book.ID = id
-	bookID, err := s.BooksDB.CreateBook(book)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to save book"})
+	book.UID = uidInt
+	if err := s.Db.SaveBook(book); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	ctx.JSON(200, gin.H{"message": "Book successfully created", "book_id": bookID})
+	ctx.JSON(200, gin.H{"message": "Book successfully created", "book_id": uidInt})
 
 }
 
-func (s *Server) CreateMultipleBooksHandler(ctx *gin.Context) {
+func (s *Server) SaveBooksHandler(ctx *gin.Context) {
 	token := ctx.GetHeader("Authorization")
 	if token == "" {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"message": "Authorization header missing"})
 		return
 	}
-	token = strings.TrimPrefix(token, "Bearer ")
-	id, err := ValidateJWT(token)
+	uid, err := ValidateJWT(token)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"message": "bad auth token", "error": err.Error()})
+		s.log.Error().Err(err).Msg("get uid failed")
+		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Bad auth token", "error": err.Error()})
 		return
 	}
-
 	var books []models.Book
-
-	err = ctx.ShouldBindBodyWithJSON(&books)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Invalid params", "error": err.Error()})
-	}
-
-	for i, book := range books {
-		books[i].ID = id // Устанавливаем userID для каждой книги
-		err = s.Valid.Struct(book)
-		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"message": "Data has not been validated", "error": err.Error()})
-			return
-		}
-	}
-
-	bookID, err := s.BooksDB.CreateMultipleBooks(books)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to save books", "error": err.Error()})
+	if err := ctx.ShouldBindBodyWithJSON(&books); err != nil {
+		s.log.Error().Err(err).Msg("parse body failed")
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	ctx.JSON(http.StatusOK, gin.H{"message": "Books successfully registered", "book_id": bookID})
+	log.Println(books)
+	uidInt, err := strconv.Atoi(uid)
+	if err != nil {
+		s.log.Error().Err(err).Msg("parse uid from str to int failed")
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if err := s.Db.SaveBooks(books, uidInt); err != nil {
+		s.log.Error().Err(err).Msg("save books failed")
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	mes := fmt.Sprintf("Was saved %d books", len(books))
+	ctx.String(http.StatusOK, mes)
 }
 
 func (s *Server) GetBooksByUserHandler(ctx *gin.Context) {
@@ -304,37 +312,23 @@ func (s *Server) GetBooksByUserHandler(ctx *gin.Context) {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"message": "Authorization header missing"})
 		return
 	}
-
-	token = strings.TrimPrefix(token, "Bearer ")
-	id, err := ValidateJWT(token)
+	uIdStr, err := ValidateJWT(token)
 	if err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"message": "Invalid token", "error": err.Error()})
 		return
 	}
-	books, err := s.BooksDB.GetBooksByUser(id)
+	uId, err := strconv.Atoi(uIdStr)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	books, err := s.Db.GetBooksByUser(uId)
 	if err != nil {
 		ctx.JSON(http.StatusNotFound, gin.H{"message": "Books not found", "error": err.Error()})
 		return
 	}
 	ctx.JSON(http.StatusOK, gin.H{"message": "Books retrieved", "books": books})
 }
-
-/*func (s *Server) GetBookByIDHandler(ctx *gin.Context) {
-	param := ctx.Query("id")
-	log.Println("Param from url - " + param)
-	id, err := strconv.Atoi(param)
-	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Invalid argument", "error": err.Error()})
-		return
-	}
-	log.Printf("ID - %v", id)
-	book, err := s.Db.GetBookByID(id)
-	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	ctx.JSON(200, gin.H{"message": "Book retrieved", "book": book})
-}*/
 
 func (s *Server) DeleteBookHandler(ctx *gin.Context) {
 	token := ctx.GetHeader("Authorization")
@@ -344,60 +338,72 @@ func (s *Server) DeleteBookHandler(ctx *gin.Context) {
 		return
 	}
 
-	bidStr := ctx.Param("id")
-
-	bid, err := strconv.Atoi(bidStr)
+	bId := ctx.Param("id")
+	bIdInt, err := strconv.Atoi(bId)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Bad book_id", "error": err.Error()})
 		return
 	}
 
-	err = s.BooksDB.SetDeleteStatus(bid)
+	err = s.Db.SetDeleteStatus(bIdInt)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+	s.deleteChan <- bIdInt
+	ctx.JSON(http.StatusOK, gin.H{"message": "Book deleted", "book_id": bIdInt})
+}
 
-	ctx.JSON(http.StatusOK, gin.H{"message": "Book deleted", "book_id": bid})
+func (s *Server) deleter(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			if len(s.deleteChan) == 5 {
+				for i := 0; i < 5; i++ {
+					<-s.deleteChan
+				}
+				if err := s.Db.DeleteBooks(); err != nil {
+					s.ErrorChan <- err
+					return
+				}
+			}
+		}
+	}
 }
 
 // Функция для генерации JWT токена для пользователя:
-func GenerateJWT(user models.User) (string, error) {
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"id":    user.ID,
-		"name":  user.Name,
-		"email": user.Email,
-		"exp":   time.Now().Add(time.Hour * 72).Unix(),
+func GenerateJWT(uid string) (string, error) {
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour * 3)),
+		},
+		UserID: uid,
 	})
+	key := []byte(jwtSecret)
+	tokenStr, err := token.SignedString(key)
+	if err != nil {
+		return "", err
+	}
+	return tokenStr, nil
+}
 
-	tokenString, err := token.SignedString(jwtSecret)
+func ValidateJWT(tokenStr string) (string, error) {
+	claim := &Claims{}
+
+	token, err := jwt.ParseWithClaims(tokenStr, claim, func(t *jwt.Token) (interface{}, error) {
+		return []byte(jwtSecret), nil
+	})
 	if err != nil {
 		return "", err
 	}
 
-	return tokenString, nil
-}
-
-func ValidateJWT(tokenString string) (string, error) {
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		return []byte(jwtSecret), nil
-	})
-
-	if err != nil || !token.Valid {
-		return "", fmt.Errorf("invalid token: %v", err)
+	if !token.Valid {
+		return "", fmt.Errorf("invalid token")
 	}
 
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok || !token.Valid {
-		return "", fmt.Errorf("invalid token claims")
-	}
-
-	userID, ok := claims["id"].(string)
-	if !ok {
-		return "", fmt.Errorf("user id not found in token")
-	}
-
-	return userID, nil
+	return claim.UserID, nil
 }
 
 // Создание JWTAuthMiddleware для проверки токена
