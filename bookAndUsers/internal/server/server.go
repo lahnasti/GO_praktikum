@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -175,16 +174,6 @@ func (s *Server) LoginHandler(ctx *gin.Context) {
 	ctx.String(http.StatusOK, "User %s was logined", user.Name)
 }
 
-func (s *Server) GetUserByIDHandler(ctx *gin.Context) {
-	id := ctx.Param("id")
-	user, err := s.Db.GetUserByLogin(id)
-	if err != nil {
-		ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-		return
-	}
-	ctx.JSON(http.StatusOK, gin.H{"message": "User retrieved", "user": user})
-}
-
 func (s *Server) UpdateUserHandler(ctx *gin.Context) {
 	var user models.User
 	if err := ctx.ShouldBindJSON(&user); err != nil {
@@ -234,19 +223,14 @@ func (s *Server) DeleteUserHandler(ctx *gin.Context) {
 func (s *Server) GetAllBooksHandler(ctx *gin.Context) {
 	books, err := s.Db.GetAllBooks()
 	if err != nil {
-		//s.log.Error().Err(err).Msg("Failed inquiry")
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	ctx.JSON(200, gin.H{"message": "Storage books", "books": books})
+	ctx.JSON(http.StatusOK, gin.H{"message": "Storage books", "books": books})
 }
 
 func (s *Server) SaveBookHandler(ctx *gin.Context) {
 	token := ctx.GetHeader("Authorization")
-	if token == "" {
-		ctx.JSON(http.StatusUnauthorized, gin.H{"message": "Authorization header missing"})
-		return
-	}
 	uid, err := ValidateJWT(token)
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"message": "Bad auth token", "error": err.Error()})
@@ -268,7 +252,7 @@ func (s *Server) SaveBookHandler(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	ctx.JSON(200, gin.H{"message": "Book successfully created", "book_id": uidInt})
+	ctx.String(http.StatusOK, "Book saved")
 
 }
 
@@ -407,7 +391,7 @@ func ValidateJWT(tokenStr string) (string, error) {
 }
 
 // Создание JWTAuthMiddleware для проверки токена
-func (s *Server) JWTAuthMiddleware() gin.HandlerFunc {
+/*func (s *Server) JWTAuthMiddleware() gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 		authHeader := ctx.GetHeader("Authorization")
 		if authHeader == "" {
@@ -416,21 +400,26 @@ func (s *Server) JWTAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-
-		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-			}
-			return jwtSecret, nil
-		})
-
-		if err != nil || !token.Valid {
-			ctx.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+		tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
+		if tokenStr == authHeader {
+			ctx.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header format must be Bearer {token}"})
 			ctx.Abort()
 			return
 		}
 
+		fmt.Printf("Token String: %s\n", tokenStr)
+
+		userID, err := ValidateJWT(tokenStr)
+		if err != nil {
+			ctx.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token: " + err.Error()})
+			ctx.Abort()
+			return
+		}
+		fmt.Printf("UserID: %s\n", userID)
+
+		// Сохраняем userID в контексте запроса
+		ctx.Set("userID", userID)
 		ctx.Next()
 	}
 }
+*/
