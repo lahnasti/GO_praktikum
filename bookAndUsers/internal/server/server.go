@@ -252,7 +252,7 @@ func (s *Server) SaveBookHandler(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	ctx.String(http.StatusOK, "Book saved")
+	ctx.JSON(http.StatusOK, gin.H{"message": "Book saved"})
 
 }
 
@@ -286,8 +286,7 @@ func (s *Server) SaveBooksHandler(ctx *gin.Context) {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	mes := fmt.Sprintf("Was saved %d books", len(books))
-	ctx.String(http.StatusOK, mes)
+	ctx.JSON(http.StatusOK, gin.H{"message": "All books saved"})
 }
 
 func (s *Server) GetBooksByUserHandler(ctx *gin.Context) {

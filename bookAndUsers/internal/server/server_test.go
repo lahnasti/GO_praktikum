@@ -666,3 +666,220 @@ func TestGetAllBooksHandler(t *testing.T) {
 		})
 	}
 }
+
+func generateValidToken() string {
+	// Используйте вашу функцию для генерации токена
+	token, _ := GenerateJWT("1") // Параметры могут отличаться в зависимости от реализации
+	return token
+}
+
+func TestSaveBookHandler(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	var srv Server
+	r := gin.Default()
+	r.POST("/books/add", srv.SaveBookHandler)
+	httpSrv := httptest.NewServer(r)
+	defer httpSrv.Close()
+
+	type want struct {
+		code   int
+		answer string
+	}
+	type test struct {
+		name    string
+		request string
+		method  string
+		token   string
+		book    string
+		err     error
+		dbFlag  bool
+		want    want
+	}
+	tests := []test{
+		{
+			name:    "Test 'SaveBookHandler' #1; Successful save",
+			request: "/books/add",
+			method:  http.MethodPost,
+			token:   generateValidToken(),
+			book:    `{"bId":1,"title":"War and Peace","author":"Lev Tolstoy","uId":1}`,
+			err:     nil,
+			dbFlag:  true,
+			want: want{
+				code:   http.StatusOK,
+				answer: `{"message":"Book saved"}`,
+			},
+		},
+		{
+			name:    "Test 'SaveBookHandler' #2; BadRequest call - Invalid JSON",
+			request: "/books/add",
+			method:  http.MethodPost,
+			token:   generateValidToken(),
+			book:    "",
+			err:     nil,
+			dbFlag:  false,
+			want: want{
+				code:   http.StatusBadRequest,
+				answer: `{"error":"EOF"}`,
+			},
+		},
+		{
+			name:    "Test 'SaveBookHandler' #3; Unauthorized call - Invalid token",
+			request: "/books/add",
+			method:  http.MethodPost,
+			token:   "invalid.token",
+			book:    `{"bId":1,"title":"War and Peace","author":"Lev Tolstoy","uId":1}`,
+			err:     nil,
+			dbFlag:  false,
+			want: want{
+				code:   http.StatusBadRequest,
+				answer: `{"message":"Bad auth token","error":"token contains an invalid number of segments"}`,
+			},
+		},
+		{
+			name:    "Test 'SaveBookHandler' #4; InternalServerError call - DB error",
+			request: "/books/add",
+			method:  http.MethodPost,
+			token:   generateValidToken(),
+			book:    `{"bId":1,"title":"War and Peace","author":"Lev Tolstoy","uId":1}`,
+			err:     errors.New("DB error"),
+			dbFlag:  true,
+			want: want{
+				code:   http.StatusInternalServerError,
+				answer: `{"error":"DB error"}`,
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+			m := mock_server.NewMockRepository(ctrl)
+			if tc.dbFlag {
+				m.EXPECT().SaveBook(gomock.Any()).Return(tc.err)
+			}
+			srv.Db = m
+
+			req := resty.New().R()
+			req.Method = tc.method
+			req.Body = tc.book
+			req.Header.Add("Authorization", tc.token)
+			req.URL = httpSrv.URL + tc.request
+			resp, err := req.Send()
+			assert.NoError(t, err)
+			assert.Equal(t, tc.want.code, resp.StatusCode())
+			if tc.want.answer != "" {
+				assert.JSONEq(t, tc.want.answer, string(resp.Body()))
+			}
+		})
+	}
+}
+
+func TestSaveBooksHandler(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	var srv Server
+	r := gin.Default()
+	r.POST("/books/adds", srv.SaveBooksHandler)
+	httpSrv := httptest.NewServer(r)
+	defer httpSrv.Close()
+
+	type want struct {
+		code   int
+		answer string
+	}
+	type test struct {
+		name    string
+		request string
+		method  string
+		token   string
+		dbFlag  bool
+		books   string
+		err     error
+		want    want
+	}
+	tests := []test{
+		{
+			name:    "Test 'SaveBooksHandler' #1; StatusOK",
+			request: "/books/adds",
+			method:  http.MethodPost,
+			token:   generateValidToken(),
+			dbFlag:  true,
+			books:   `[{"bId":1,"title":"Book1","author":"Author1"},{"bId":2,"title":"Book2","author":"Author2"}]`,
+			want: want{
+				code:   http.StatusOK,
+				answer: `{"message": "All books saved"}`,
+			},
+		},
+		{
+			name:    "Test 'SaveBooksHandler' #2; Missing Authorization header",
+			request: "/books/adds",
+			method:  http.MethodPost,
+			token:   "",
+			books:   `[{"bId":1,"title":"Book1","author":"Author1"},{"bId":2,"title":"Book2","author":"Author2"}]`,
+			dbFlag:  false,
+			want: want{
+				code:   http.StatusUnauthorized,
+				answer: `{"message":"Authorization header missing"}`,
+			},
+		},
+		{
+			name:    "Test 'SaveBooksHandler' #3; Invalid token",
+			request: "/books/adds",
+			method:  http.MethodPost,
+			token:   generateValidToken(),
+			books:   `[{"bId":1,"title":"Book1","author":"Author1"},{"bId":2,"title":"Book2","author":"Author2"}]`,
+			dbFlag:  false,
+			want: want{
+				code:   http.StatusBadRequest,
+				answer: `{"message":"Bad auth token","error":"token contains an invalid number of segments"}`,
+			},
+		},
+		{
+			name:    "Test 'SaveBooksHandler' #4; Invalid JSON",
+			request: "/books/adds",
+			method:  http.MethodPost,
+			token:   generateValidToken(),
+			books:    `{"invalid":`, // Некорректный JSON
+			dbFlag:  false,
+			want: want{
+				code:   http.StatusBadRequest,
+				answer: `{"error":"invalid character '}' looking for beginning of object key string"}`,
+			},
+		},
+		{
+			name:    "Test 'SaveBooksHandler' #5; Database error",
+			request: "/books/adds",
+			method:  http.MethodPost,
+			token:   generateValidToken(),
+			books:   `[{"bId":1,"title":"Book1","author":"Author1"},{"bId":2,"title":"Book2","author":"Author2"}]`,
+			err:     errors.New("db error"),
+			dbFlag:  true,
+			want: want{
+				code:   http.StatusInternalServerError,
+				answer: `{"error":"db error"}`,
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+			m := mock_server.NewMockRepository(ctrl)
+			if tc.dbFlag {
+				m.EXPECT().SaveBooks(gomock.Any(), gomock.Any()).Return(tc.err)
+				srv.Db = m
+			}
+
+			req := resty.New().R()
+			req.Method = tc.method
+			req.Body = tc.books
+			req.Header.Add("Authorization", tc.token)
+			req.URL = httpSrv.URL + tc.request
+			resp, err := req.Send()
+			assert.NoError(t, err)
+			assert.Equal(t, tc.want.code, resp.StatusCode())
+			if tc.want.answer != "" {
+				assert.JSONEq(t, tc.want.answer, string(resp.Body()))
+			}
+		})
+	}
+}
