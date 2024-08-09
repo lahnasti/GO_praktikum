@@ -46,7 +46,7 @@ type Server struct {
 	ErrorChan  chan error
 	deleteChan chan int
 	Valid      *validator.Validate
-	log        *zerolog.Logger
+	log        zerolog.Logger
 }
 
 func NewServer(ctx context.Context, db Repository, zlog *zerolog.Logger) *Server {
@@ -56,7 +56,7 @@ func NewServer(ctx context.Context, db Repository, zlog *zerolog.Logger) *Server
 		Db:         db,
 		deleteChan: dChan,
 		ErrorChan:  errChan,
-		log:        zlog,
+		log:        *zlog,
 	}
 	go srv.deleter(ctx)
 	return &Server{

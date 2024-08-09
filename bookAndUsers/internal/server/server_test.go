@@ -629,7 +629,7 @@ func TestGetAllBooksHandler(t *testing.T) {
 					BID:    2,
 					Title:  "Diary of a monkey",
 					Author: "Jain Birkin",
-					UID:    1,
+					UID:    2,
 				},
 			},
 			want: want{
@@ -825,7 +825,7 @@ func TestSaveBooksHandler(t *testing.T) {
 			name:    "Test 'SaveBooksHandler' #3; Invalid token",
 			request: "/books/adds",
 			method:  http.MethodPost,
-			token:   generateValidToken(),
+			token:   "invalid token",
 			books:   `[{"bId":1,"title":"Book1","author":"Author1"},{"bId":2,"title":"Book2","author":"Author2"}]`,
 			dbFlag:  false,
 			want: want{
@@ -838,11 +838,11 @@ func TestSaveBooksHandler(t *testing.T) {
 			request: "/books/adds",
 			method:  http.MethodPost,
 			token:   generateValidToken(),
-			books:    `{"invalid":`, // Некорректный JSON
+			books:   `{"invalid":`, // Некорректный JSON
 			dbFlag:  false,
 			want: want{
 				code:   http.StatusBadRequest,
-				answer: `{"error":"invalid character '}' looking for beginning of object key string"}`,
+				answer: `{"error":"unexpected EOF"}`,
 			},
 		},
 		{
@@ -880,6 +880,135 @@ func TestSaveBooksHandler(t *testing.T) {
 			if tc.want.answer != "" {
 				assert.JSONEq(t, tc.want.answer, string(resp.Body()))
 			}
+		})
+	}
+}
+
+func TestGetBooksByUserHandler(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	m := mock_server.NewMockRepository(ctrl)
+	srv := &Server{Db: m}
+	r := gin.Default()
+	r.GET("/books", srv.GetBooksByUserHandler)
+	httpSrv := httptest.NewServer(r)
+	defer httpSrv.Close()
+
+	type want struct {
+		code   int
+		answer string
+	}
+	type test struct {
+		name    string
+		request string
+		method  string
+		token   string
+		uId     string
+		books   []models.Book
+		dbFlag bool
+		err     error
+		want    want
+	}
+	tests := []test{
+		{
+			name:    "Test 'GetBooksByUserHandler' #1; Success",
+			request: "/books",
+			method:  http.MethodGet,
+			token:   generateValidToken(),
+			uId:     "1",
+			dbFlag:  true,
+			err:     nil,
+			books: []models.Book{
+				{
+					BID:    1,
+					Title:  "War and Peace",
+					Author: "Lev Tolstoy",
+					UID:    1,
+				},
+				{
+					BID:    2,
+					Title:  "Diary of a monkey",
+					Author: "Jain Birkin",
+					UID:    1,
+				},
+			},
+			want: want{
+				code: http.StatusOK,
+				answer: `{"message":"Books retrieved","books":[{"bId":1,"title":"War and Peace","author":"Lev Tolstoy","uId":1},{"bId":2,"title":"Diary of a monkey","author":"Jain Birkin","uId":1}]}`,
+			},
+		},
+		{
+			name:    "Test 'GetBooksByUserHandler' #2; Missing Authorization header",
+			request: "/books",
+			method:  http.MethodGet,
+			token:   "",
+			uId:     "1",
+			want: want{
+				code:   http.StatusUnauthorized,
+				answer: `{"message":"Authorization header missing"}`,
+			},
+		},
+		{
+			name:    "Test 'GetBooksByUserHandler' #3; Invalid token",
+			request: "/books",
+			method:  http.MethodGet,
+			token:   "invalid.token",
+			uId:     "1",
+			want: want{
+				code:   http.StatusUnauthorized,
+				answer: `{"message":"Invalid token","error":"token contains an invalid number of segments"}`,
+			},
+		},
+		{
+			name:    "Test 'GetBooksByUserHandler' #4; Invalid user ID",
+			request: "/books",
+			method:  http.MethodGet,
+			token:   generateValidToken(),
+			uId:     "invalid",
+			want: want{
+				code:   http.StatusInternalServerError,
+				answer: `{"error":"strconv.Atoi: parsing \"invalid\": invalid syntax"}`,
+			},
+		},
+		{
+			name:    "Test 'GetBooksByUserHandler' #5; Database error",
+			request: "/books",
+			method:  http.MethodGet,
+			token:   generateValidToken(),
+			uId:     "1",
+			err:     errors.New("db error"),
+			want: want{
+				code:   http.StatusNotFound,
+				answer: `{"message": "Books not found", "error": "db error"}`,
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.method == http.MethodGet && tc.token != "" {
+				if tc.uId != "invalid" {
+					uId, _ := strconv.Atoi(tc.uId)
+					if tc.err != nil {
+						m.EXPECT().GetBooksByUser(uId).Return(nil, tc.err).Times(1)
+					} else {
+						m.EXPECT().GetBooksByUser(uId).Return(tc.books, nil).Times(1)
+					}
+				}
+			}
+
+			req := httptest.NewRequest(tc.method, httpSrv.URL+tc.request+"?uid="+tc.uId, nil)
+			if tc.token != "" {
+				req.Header.Set("Authorization", tc.token)
+			}
+
+			resp := httptest.NewRecorder()
+			r.ServeHTTP(resp, req)
+
+			assert.Equal(t, tc.want.code, resp.Code)
+			assert.JSONEq(t, tc.want.answer, resp.Body.String())
 		})
 	}
 }
